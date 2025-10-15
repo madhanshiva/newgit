@@ -1,1 +1,712 @@
-# gitsample
+# Lab 06: Upgrade and migrate to Windows Server
+
+## Lab scenario
+
+Contoso is exploring the hybrid model for its infrastructure services that would facilitate migration of its on-premises Windows servers to Azure virtual machines (VMs). To assist with this initiative, and you were tasked with evaluating the process of deploying Active Directory Domain Services (AD DS) domain controllers in Azure VMs. Your intention is to identify differences between the manual process currently used for on-premises deployments and the deployment methods available in Azure. In addition, you want to test and document the Storage Migration Services functionality to validate its usage for migrations of on-premises file servers. 
+
+>**Note:** An **[interactive lab simulation](https://mslabs.cloudguides.com/guides/AZ-801%20Lab%20Simulation%20-%20Upgrading%20and%20migrating%20in%20Windows%20Server)** is available that allows you to click through this lab at your own pace. You may find slight differences between the interactive simulation and the hosted lab, but the core concepts and ideas being demonstrated are the same. 
+
+## Lab Objectives
+
+In this lab, you will:
+
+- Deploy AD DS domain controllers in Azure.
+- Migrate file servers by using Storage Migration Service.
+
+## Estimated time: 2 hr 45 Minutes
+
+## Architecture diagram
+
+![](../Media/lab6.1.png)
+
+## Exercise 1: Deploying AD DS domain controllers in Azure
+
+In this exercise, you will learn how to deploy Active Directory Domain Services (AD DS) domain controllers in Azure. The tasks cover the creation of a domain controller using an Azure Resource Manager (ARM) template, the setup of Azure Bastion for secure access to your VMs, and the manual deployment of a second domain controller VM to expand your AD environment. This exercise focuses on understanding the key configurations required for AD DS in Azure, such as virtual networks, availability sets, and DNS configurations.
+
+### Task 1: Deploy a domain controller by using an Azure Resource Manager (ARM) template
+
+In this task, you will deploy a domain controller using an ARM template. You will edit the template to adjust settings such as OS version, disk caching, and network configuration. You will also deploy the VM in an availability set and validate the deployment.
+
+1. Select the **SEA-SVR2** from the top menu drop down.
+
+    ![](../media/azm2-1.png)
+
+1. If needed, sign in as **CONTOSO\\Administrator** with the password **Pa55w.rd**.
+
+    ![](../media/azm2-2.png)
+
+1. On **SEA-SVR2**, start **Microsoft Edge** from the task bar, right click on the following link [Create a new Windows VM and create a new AD Forest, Domain and DC](https://github.com/az140mp/azure-quickstart-templates/tree/master/application-workloads/active-directory/active-directory-new-domain), then select **Copy link** and then paste it on the browser to access a customized version of the QuickStart template
+
+1. On the **Create a new Windows VM and create a new AD Forest, Domain and DC** page, select **Deploy to Azure**.
+
+    ![](../Media/az6l1.png)
+
+1. This will automatically redirect the browser to the **Create an Azure VM with a new AD Forest** page in the Azure portal.
+
+1. When prompted, in the Azure portal, sign in by using following credentials:
+   
+   - Username: <inject key="AzureAdUserEmail"></inject>
+  
+   - Password: <inject key="AzureAdUserPassword"></inject>
+
+1. On the **Create an Azure VM with a new AD Forest** page, select **Edit template**.
+
+1. On the **Edit template** page, browse to the **storageProfile** section (starting with the line **195**) and verify that the **sku** (on line **199**) is set to **2022-Datacenter (1)**, if not then change it to 2022-Datacenter, and the **version** (on line **200**) is set to **latest (2)** and that **dataDisks** **caching** (on line **213**) is set to **None (3)**.
+
+    > **Note:** Caching on the disks hosting AD DS database and log files should be set to **None**.
+
+    ![](../Media/L6E1T1S6.png)
+
+1. On the **Edit template** page, browse to the **extension** section (starting with the line **233**) and note that the template uses PowerShell Desired State Configuration to run the **CreateADPDC.ps1** script within the deployed Azure virtual machine (VM).
+
+   > **Note:** To review the script, you can use the following steps:
+
+	- On **SEA-SVR2**, open another tab in the Microsoft Edge window, and again access the customized version of QuickStart 
+        template at **[Create a new Windows VM and create a new AD Forest, Domain and DC](https://github.com/az140mp/azure-quickstart-templates/tree/master/application-workloads/active-directory/active-directory-new-domain)**.
+
+	- On the **Create a new Windows VM and create a new AD Forest, Domain and DC** page, in the listing of the repository content, 	select the **DSC** folder, and then select **CreateADPDC.ps1** file.
+    
+	- On the **azure-quickstart-templates/application-workloads/active-directory/active-directory-new-domain/DSC/CreateADPDC.ps1** 	page, review the content of the script and note that it installs a number of server roles, including Active Directory Domain 		Services and DNS, placing the NTDS database and logs, as well as the SYSOVL share on drive **F**.
+     
+	- Close the Microsoft Edge tab and switch back to the one displaying the **Edit template** page in the Azure portal.
+
+1. On the **Edit template** page, browse to the section that provisions an availability set (starting with the line **110**) and note that the template creates an availability set and deploys the VM into it (as indicated by the **dependsOn** element on line **181**).
+
+   >**Note:** Later in this exercise, you will deploy another Azure VM into the same availability set and configure it as an additional domain controller in the same domain. The use of an availability set provides additional resiliency.
+
+1. Browse to the section that provisions the network interface of the Azure VM (starting with the line **152**) and note that the private IP address allocation method is set to **Static** (on line **164**).
+
+   ![](../Media/L6E1T1S9.png)
+
+   >**Note:** Using the static assignment is common when deploying domain controllers, but it is essential for servers that host the DNS server role.
+
+1. Browse to the section that deploys a nested template(starting with line **266**) and note that the template updates the DNS server address within the virtual network hosting the Azure VM operating as a domain controller with the DNS server role installed.
+
+   >**Note:** Configuring the custom DNS server virtual network setting that points to the Azure VM running the domain controller with the DNS server role ensures that any Azure VM subsequently deployed into the same virtual network will automatically use that DNS server for name resolution, effectively providing the domain join functionality.
+
+1. On the **Edit template** page, select **Save** if changes were made to the template; otherwise, select **Discard**.
+
+    ![](../Media/az6l2.png)
+   
+1. Back on the **Create an Azure VM with a new AD Forest** page, select **Edit parameters**.
+
+    ![](../Media/az6l3.png)
+   
+1. On the **Edit parameters** page, select **Load file (1)**, in the **File Upload** dialog box, browse to the **C:\\Labfiles\\Lab06 (2)** folder, select the **L06-rg_template.parameters.json (3)** file, and then select **Open (4)**.
+
+    ![](../Media/az6l4.png)
+   
+1. On the **Edit parameters** page, select **Save**.
+
+    ![](../Media/az-l6-1.png)
+
+1. Back on the **Create an Azure VM with a new AD Forest** page, below the **Resource group** drop-down list, select **AZ801-L0601-RG**.
+   
+1. On the **Create an Azure VM with a new AD Forest** page, if needed, adjust the deployment settings so they have the following values (leave others with their default values):
+
+   | Setting | Value | 
+   | --- | --- |
+   | Subscription | Leave the default subscription |
+   | Resource group | select the existing resource group **AZ801-L0601-RG** |
+   | Region | **<inject key="Resource group Region" enableCopy="false"/>** |
+   | Admin Username | **Student** |
+   | Admin Password | **Pa55w.rd1234** |
+   | Domain name | **contoso.com** |
+   | Vm Size | **Standard_D2s_v3** |
+   | _artifacts Location | **`https://raw.githubusercontent.com/az140mp/azure-quickstart-templates/master/application-workloads/active-directory/active-directory-new-domain/`** |
+   | Virtual Machine Name | **az801l06a-dc1** |
+   | Virtual Network Name | **az801l06a-vnet** |
+   | Virtual Network Address Range | **10.6.0.0/16** |
+   | Network Interface Name | **az801l06a-dc1-nic1** |
+   | Private IP Address | **10.6.0.4** |
+   | Subnet Name | **adSubnet** |
+   | Subnet Range | **10.6.0.0/24** |
+   | Availability Set Name | **adAvailabilitySet** |
+
+1. On the **Create an Azure VM with a new AD Forest** page, select **Review + create**, and then select **Create**.
+
+    ![](../Media/az-l6-2.png)
+
+    >**Note:** Please wait for the deployment to complete before you go ahead with the next task. This might take about 15 minutes. 
+
+  > **Congratulations** on completing the Task! Now, it's time to validate it. Here are the steps:
+  > - Hit the Validate button for the corresponding task. If you receive a success message, you have successfully validated the lab. 
+  > - If not, carefully read the error message and retry the step, following the instructions in the lab guide.
+  > - If you need any assistance, please contact us at cloudlabs-support@spektrasystems.com.com.
+   <validation step="6f46a686-d299-4587-88f2-d9c0a9c4fd9f" />
+
+### Task 2: Deploy Azure Bastion 
+
+In this task, you will add an AzureBastionSubnet to the virtual network. Then, you will deploy Azure Bastion to securely connect to VMs without using public IP addresses.
+
+   >**Note:** Azure Bastion allows for connection to the Azure VMs without public endpoints which you deployed in the previous task of this exercise, while providing protection against brute force exploits that target operating system-level credentials.
+
+1. On **SEA-SVR2**, in the Microsoft Edge window displaying the Azure portal, open the Azure Cloud Shell pane by selecting the **Cloud Shell (1)** button in the Azure portal.
+
+1. Selecting a **PowerShell (2)** environment and creating storage if prompted. The cloud shell provides a command line interface in a pane at the bottom of the Azure portal, as shown here:
+
+    ![](../Media/azl6-1.png)
+
+1. Within the Getting Started pane, select **Mount storage account (1)**, select your **Storage account subscription (2)** from the dropdown and click **Apply (3)**.
+
+    ![](../Media/azl6-2.png)
+
+1. Within the **Mount storage account** pane, select **I want to create a storage account (1)** and click **Next (2)**.
+
+    ![](../Media/azl6-3.png)
+
+1. Enter the following values to create the Cloud Shell storage account, and then click on **Create (6)**
+
+   | Setting | Value |
+   |---------|-------|
+   | Subscription | Select your subscription **(1)** |
+   | Resource group | AZ801-L0601-RG **(2)** |
+   | Region | **<inject key="Resource group Region" enableCopy="false"/> (3)** |
+   | Storage account name | **cloudstore<inject key="DeploymentID" enableCopy="false"/> (4)** |
+   | File share name | **fileshare<inject key="DeploymentID" enableCopy="false"/>(5)** |
+
+    ![](../media/az-l6-3.png)
+
+1. Wait for PowerShell terminal to start.
+
+1. From the PowerShell session in the Cloud Shell pane, run the following commands to add a subnet named **AzureBastionSubnet** to the virtual network **az801l06a-vnet** you created earlier in this exercise: (Make sure to press `Enter` after the last commandd)
+
+   ```powershell
+   $resourceGroupName = 'AZ801-L0601-RG'
+   $vnet = Get-AzVirtualNetwork -ResourceGroupName $resourceGroupName -Name 'az801l06a-vnet'
+   $subnetConfig = Add-AzVirtualNetworkSubnetConfig `
+    -Name 'AzureBastionSubnet' `
+    -AddressPrefix 10.6.255.0/24 `
+    -VirtualNetwork $vnet
+   $vnet | Set-AzVirtualNetwork
+   ```
+
+    ![](../Media/az6l10.png)   
+
+1. Close the Cloud Shell pane.
+
+1. In the Azure portal, in the **Search resources, services, and docs** text box, on the toolbar, search for and select **Bastions (1)**, and then, on the **Bastions (2)** page.
+
+   ![](../Media/az6l11.png)
+
+1. Select **+ Create**.
+
+    ![](../media/az-l6-4.png)
+
+1. On the **Basic** tab of the **Create a Bastion** page, specify the following settings, and then select **Review + create**:
+
+   | Setting | Value | 
+   | --- | --- |
+   | Subscription | Leave the default subscription |
+   | Resource group |select the existing resource group **AZ801-L0602-RG** |
+   | Name | **az801l06a-bastion (1)** |
+   | Region | Leave the default region |
+   | Availabilty zone | **None (2)** |
+   | Tier | **Basic (3)** |
+   | Virtual network | **az801l06a-vnet (4)** |
+   | Subnet | **AzureBastionSubnet (10.6.255.0/24) (5)** |
+   | Public IP address | **Create new (6)** |
+   | Public IP address name | **az801l06a-vnet-ip (7)** |
+
+1. On the **Review + create (8)** tab of the **Create a Bastion** page, select **Create**.
+
+   ![](../Media/L5E1T2S11-1.png)
+
+   ![](../Media/L6E1T2S11.png)
+
+   >**Note**: Wait for the deployment to complete before you proceed to the next task. The deployment might take about `5 - 10` minutes.
+
+### Task 3: Deploy an Azure VM by using the Azure portal
+
+In this task, you will deploy a second VM using the Azure portal as an additional domain controller. You will configure the VM settings, attach a data disk, and complete the deployment.
+
+   >**Note:** You could fully automate the deployment of the second Azure VM and its setup as an additional domain controller in the same domain as the first one you provisioned in the first task of this exercise. However, the use of graphical interface in this case should provide additional guidance regarding differences between provisioning domain controllers in on-premises and Azure-based scenarios.
+
+1. On **SEA-SVR2**, in the Microsoft Edge window displaying the Azure portal, in the **Search resources, services, and docs** text box, on the toolbar, search for **Virtual machines (1)** and select **Virtual machines (2)**. 
+
+    ![](../media/az-l6-5.png)
+
+1. On the **Compute infrastructure | Virtual machines** page, select **+ Create (1)**, and then, in the drop-down menu, select **Virtual machine (2)**.
+
+   ![](../Media/az6l12.png)
+
+1. On the **Basics** tab of the **Create a virtual machine** blade, specify the following settings (leave others with their default values). Then, select **Next: Disks > (12)**
+
+   | Setting | Value |
+   | --- | --- |
+   | Subscription | Leave the default subscription |
+   | Resource group | select the existing resource group **AZ801-L0601-RG (1)** |
+   | Virtual machine name | **az801l06a-dc2 (2)** |
+   | Region | Leave the default region |
+   | Availability options | **Availability set (3)** |
+   | Availability set | **adAvailabilitySet (4)** |
+   | Security type | **Standard (5)** |
+   | Image | **Windows Server 2022 Datacenter: Azure Edition -x64 Gen2 (6)** |
+   | Run with Azure Spot discount | **No** |
+   | Size | **Standard D2s v3 (7)** |
+   | Username | **Student (8)** |
+   | Password | **Pa55w.rd1234 (9)**  |
+   | Xonfirm Password | **Pa55w.rd1234 (10)**  |
+   | Public inbound ports | **None (11)** |
+   | Would you like to use an existing Windows Server license? | **No** |
+
+   ![](../Media/L6E1T3S3.png)
+
+   ![](../Media/L6E1T3S3-1.png)
+
+1. On the **Disks** tab of the **Create a virtual machine** blade, specify the following settings (leave others with their default values).
+
+   | Setting | Value |
+   | --- | --- |
+   | OS disk type | **Standard SSD (1)** |
+
+1. On the **Disks** tab of the **Create a virtual machine** blade, in the **Data disks** section, select **Create and attach a new disk (2)**.
+
+   ![](../Media/az6l13.png)
+
+1. On the **Create a new disk** page, specify the following settings (leave others with their default values), and then select **OK (4)**.
+
+   | Setting | Value |
+   | --- | --- |
+   | Name | **az801l06a-dc2_DataDisk_0 (1)** |
+   | Source type | **None (empty disk) (2)** |
+   | Size | Click on **Change Size** and select **32 GiB** **Premium SSD (3)** |
+
+   ![](../Media/L6T1T3S6.png)
+
+1. Back on the **Disks** tab of the **Create a virtual machine** blade, select **Next: Networking >**, and then, on the **Networking** tab of the **Create a virtual machine** blade, specify the following settings (leave others with their default values). Select **Next: Management > (6)**.
+
+   | Setting | Value |
+   | --- | --- |
+   | Virtual network | **az801l06a-vnet (1)** |
+   | Subnet | **adSubnet (10.6.0.0/24) (2)** |
+   | Public IP | **None (3)** |
+   | NIC network security group | **None (4)** |
+   | Enable accelerated networking | disabled **(5)** |
+   | Load balancing | None **(6)** |
+
+    ![](../Media/L6E1T3S7.png)
+
+1.  On the **Management** tab of the **Create a virtual machine** blade, specify the following settings (leave others with their default values). Then select **Next: Monitoring > (2)**.
+
+      | Setting | Value |
+      | --- | --- |
+      | Patch orchestration options | **Manual updates (1)** |
+
+       ![](../Media/L6E1T3S8.png)
+
+1. On the **Monitoring** tab of the **Create a virtual machine** blade, specify the following settings (leave others with their default values).
+
+   | Setting | Value |
+   | --- | --- |
+   | Boot diagnostics | **Enable with managed storage account (recommended) (1)** |
+
+    ![](../Media/L6E1T3S9.png)
+
+1. Select **Next: Advanced > (2)**, on the **Advanced** tab of the **Create a virtual machine** blade, review the available settings without modifying any of them, and then select **Review + Create**.
+
+    ![](../Media/L6E1T3S10.png)
+
+1. On the **Review + Create** blade, select **Create**.
+
+    ![](../Media/L6E1T3S11.png)
+
+   >**Note:** Wait for the deployment to complete. The deployment might take about 3 minutes.
+
+### Task 4: Manually promote a domain controller in an Azure VM
+
+In this task, you will manually promote a virtual machine (VM) to a domain controller within an Azure environment. You will perform various configuration steps such as assigning a static IP address, installing necessary roles, initializing data disks, and running the Active Directory Domain Services Configuration Wizard to promote the server. These steps ensure the machine is correctly configured to serve as a domain controller within an existing domain.
+
+1. On **SEA-SVR2**, in the Microsoft Edge window displaying the Azure portal, on the deployment page, select **Go to resource**.
+
+    ![](../media/az-l6-6.png)
+
+1. On the **az801l06a-dc2** page, on the vertical menu of the left side, in the **Networking (1)** section, select **Network settings (2)**. **Clcik the link (3)** to the network interface of the **az801l06a-dc2** virtual machine.
+
+    ![](../media/az-l6-7.png)
+
+1. On the network interface page, on the vertical menu of the left side, in the **Settings (1)** section, select **IP Configurations (2)**.
+
+    ![](../media/az-l6-8.png)
+
+1. On the **IP Configurations** page, select **ipconfig1 (1)** entry. In the **Edit IP configuration** section, select **Static (2)**, and then select **Save (3)**.
+
+   ![](../Media/L6E1T4S4.png)
+
+   >**Note:** Using the static assignment is common when deploying domain controllers, but it is essential for servers that host the DNS server role.
+
+   >**Note:** Assigning static IP address to a network interface of an Azure VM will trigger a restart of its operating system.
+
+1. On **SEA-SVR2**, in the Microsoft Edge window displaying the Azure portal, browse back to the **az801l06a-dc2** page.
+
+1. On the **az801l06a-dc2** page, select **Connect (1)**, from the drop-down menu, select **Connect via Bastion (2)**. 
+
+   ![](../Media/L6E1T4S6.png)
+
+1. On the Bastion page, provide the following credentials, and then select **Connect (3)**:
+
+   | Setting | Value | 
+   | --- | --- |
+   | User Name |**Student (1)** |
+   | Password |**Pa55w.rd1234 (2)** |
+
+    ![](../Media/L6E1T4S7.png)
+
+    > **Note:** **Edge** by default will block popups. To allow popups for **Bastion** go to **Settings** in **Edge**, select **Cookies 
+    and site permissions** on the left, **Pop-ups and redirects** under **All permissions** and finally toggle **Block (recommended)** 
+    off.
+
+1. Within the Remote Desktop session to **az801l06a-dc2**, select **Start (1)**.  
+
+1. Right-click **Windows PowerShell (2)**, select **More (3)**, and then choose **Run as administrator (4)**.  
+   
+    ![](../media/az-l6-9.png)
+
+1. To install the AD DS and DNS server roles, at the Windows PowerShell command prompt, follow the below steps to copy the command from the lab guide to the bastion.
+
+    - **Step 1:** Copy the below command.
+
+      ```powershell
+      Install-WindowsFeature -Name AD-Domain-Services,DNS -IncludeManagementTools
+      ```
+   
+    - **Step 2:** Click on the **>>** button on the left pane of the bastion.
+   
+       ![](../Media/L6E1T4S11-1.png)
+   
+    - **Step 3:** Paste the command in clipboard and hit **Enter**
+   
+       ![](../Media/L6E1T4S9-3.png)
+   
+    - **Step 4:** On the **Windows PowerShell**, press **Ctrl+V**.
+   
+       >**Note:** Wait for the installation to complete. This might take about 3 minutes.
+
+        ![](../Media/L6E1T4S9-4.png)
+
+1. To configure the data disk, at the Windows PowerShell prompt, enter the following commands, and after entering each command, press Enter:
+
+   ```powershell
+   Get-Disk | Where PartitionStyle -eq 'RAW' |  Initialize-Disk -PartitionStyle MBR
+   New-Partition -DiskNumber 2 -UseMaximumSize -AssignDriveLetter
+   Format-Volume -DriveLetter E -FileSystem NTFS
+   ```
+
+    ![](../Media/L6E1T4S10.png)
+
+1. Within the Remote Desktop session to **az801l06a-dc2**, switch to the **Server Manager** window.
+
+1. In **Server Manager**, select the **Notifications (1)** flag symbol, and then, in the **Post-deployment Configuration** section, select the **Promote this server to a domain controller (2)** link. This will start **Active Directory Domain Services Configuration Wizard**.
+
+    ![](../media/az-l6-10.png)
+
+1. On the **Deployment Configuration** page of **Active Directory Domain Services Configuration Wizard**, under **Select the deployment operation**, verify that **Add a domain controller to an existing domain** is selected.
+
+1. In the **Domain** text box, enter **contoso.com (1)** domain. In the **Supply the credentials to perform this operation** section, select **Change (2)**.
+
+    ![](../Media/L6E1T4S14.png)
+
+1. In the **Credentials for deployment operation** dialog box, in the **User name** box, enter **Student@contoso.com (1)**, in the **Password** box, enter **Pa55w.rd1234 (2)**, and then select **OK (3)**. 
+
+    ![](../media/az-l6-11.png)
+
+1. Back on the **Deployment Configuration** page of **Active Directory Domain Services Configuration Wizard**, select **Next**.
+
+   >**Note:** If you are unable to see the **Next** option, try adjusting **zoom in/zoom out** from the browser settings.
+
+1. On the **Domain Controller Options** page, ensure that the **Domain Name System (DNS) server**, **Global Catalog (GC)** checkboxes are selected and **Read-only domain controller (RODC)** checkbox is cleared **(1).** In the **Type the Directory Services Restore Mode (DSRM) password** section, enter and confirm the password **Pa55w.rd1234 (2)**, and then select **Next (3)**.
+
+   ![](../Media/L6E1T4S17.png)
+
+1. On the **DNS Options** page of **Active Directory Domain Services Configuration Wizard**, select **Next**.
+
+1. On the **Additional Options** page, select **Next**.
+
+1. On the **Paths** page, change the drive of the path settings from **C:** to **F: (1)** for the **Database** folder, **Log files** folder, and **SYSVOL** folder, and then select **Next (2)**.
+
+    ![](../media/az-l6-13.png)
+
+1. On the **Review Options** page, select **Next**.
+
+1. On the **Prerequisite Check** page, note the warnings regarding network adapter not having static IP address, and then select **Install**.
+
+   ![](../Media/L6E1T4S22.png)
+
+   > **Note:** The warning is expected because the static IP address is assigned on the platform level, rather than within the operating system.
+
+   > **Note:** The operating system will restart automatically to complete the promotion process. It may take a while.
+
+1. On **SEA-SVR2**, in the Microsoft Edge window displaying the Azure portal, on the **az801l06a-dc2** page, select **Connect**, from the drop-down menu, select **Connect via Bastion**.  
+
+1. On the Bastion page, provide the following credentials, and then select **Connect**:
+
+   | Setting | Value | 
+   | --- | --- |
+   | User Name |**Student** |
+   | Password |**Pa55w.rd1234** |
+
+1. Within the Remote Desktop session to **az801l06a-dc2**, wait until the **Server Manager** window opens and verify that the list of locally installed roles includes **AD DS** and **DNS** on the left side.
+
+     ![](../media/az-l6-15.1.png)
+
+## Exercise 2: Migrating file servers by using Storage Migration Service
+
+### Task 1: Set up file services
+
+In this task, you will set up file services on the SEA-SVR2 machine by running a PowerShell script. The script will initialize additional data disks, create NTFS volumes, assign drive letters, and configure file shares that will be used in the file migration process.
+
+1. On **SEA-SVR2**, on the taskbar, select **File Explorer**.
+
+1. In File Explorer, browse to the **C:\\Labfiles\\Lab06 (1)** folder.
+
+1. In File Explorer, in the details pane, select the file **L06_SetupFS.ps1 (2)**, right click on it to display its context menu, and then, in the menu, select **Edit (3)**.
+
+    ![](../media/az-l6-16.png)
+
+    >**Note:** This will automatically open the file **L06_SetupFS.ps1** in the script pane of Windows PowerShell ISE.
+
+1. In the Windows PowerShell ISE script pane, review the script, and then execute it by selecting the **Run Script** icon in the toolbar or by pressing F5 then select **Run once**. 
+
+    ![](../media/az-l6-17.png)
+
+    >**Note:** Wait for the script to complete. This should take about 1 minute.
+
+    >**Note:** The script initializes an extra data disk on **SEA-SVR1** and **SEA-SVR2**, creates an NTFS volume on each, assigns the **S:** drive letter to each volume, creates a share named **Data** using the **S:\Data** folder on **SEA-SVR1**, and adds to it sample files with a total size of about 1 GB.
+
+   >**Note:** Click on **Run Once** when the pop-up comes up.
+
+
+> **Congratulations** on completing the Task! Now, it's time to validate it. Here are the steps:
+  > - Hit the Validate button for the corresponding task. If you receive a success message, you have successfully validated the lab. 
+  > - If not, carefully read the error message and retry the step, following the instructions in the lab guide.
+  > - If you need any assistance, please contact us at cloudlabs-support@spektrasystems.com.com.
+   <validation step="cb93febc-2d5a-4be7-9104-a0ba14a68ae6" />   
+
+### Task 2: Perform migration by using Storage Migration Service
+
+In this task, you will use Windows Admin Center and the Storage Migration Service to migrate files from SEA-SVR1 to SEA-SVR2. This will involve scanning the source server, transferring data, mapping volumes, and configuring the migration settings, ensuring that files and data from the old server are successfully moved to the new one.
+
+1. On **SEA-SVR2**, start Microsoft Edge, and then go to **https://SEA-SVR2.contoso.com**. 
+   
+   >**Note:** If the link does not work, on **SEA-SVR2**, open File Explorer, select Downloads folder, in the Downloads folder select **WindowsAdminCenter.msi** file and install manually. After the install completes, refresh Microsoft Edge.
+
+   >**Note:** If you get **NET::ERR_CERT_DATE_INVALID** error, select **Advanced** on the Edge browser page, at the bottom of page select **Continue to sea-svr2-contoso.com (unsafe)**.
+
+1. When prompted, in the **Windows Security** dialog box, enter the following credentials, and then select **OK (3)**:
+
+   - Username: **CONTOSO\\Administrator (1)**
+   - Password: **Pa55w.rd (2)**
+
+      ![](../media/az-l6-18.png)
+
+1. Review the **New in this release** pop-up window and select **Close** in its upper-right corner.
+
+1. In the **All connections** pane of Windows Admin Center, in the upper-right corner, select the **Settings** icon (the cog wheel).
+
+    ![](../media/az-l6-19.png)
+
+1. In the left pane, select **Extensions (1)**. Review the available extensions. Under the details pane, select **Installed extensions (2)** and verify that the list includes the **Storage Migration Service (3)** extension.
+
+   ![](../Media/L6E2T2S6.png)
+
+      >**Note:** If there is an update available, select the **Storage Migration Service** extension entry and select **Update**.
+
+1. On the top menu, next to **Settings (1)**, select the drop-down arrow, and then select **Server Manager (2)**.
+
+    ![](../media/az-l6-20.png)
+
+1. In the **All connections** pane, select the **sea-svr2.contoso.com** link.
+
+    ![](../media/az-l6-21.png)
+
+1. On the **sea-svr2.contoso.com** page, on the **Tools** menu, select the **Storage Migration Service (1)** entry. Under the **Storage Migration Service** pane, select **Install (2)**.
+
+    ![](../media/az-l6-22.png)
+
+    >**Note:** This will automatically install the Storage Migration Service and its required components.
+
+1. In the **Migrate storage in three steps** pane, select **Close**.
+
+    ![](../media/az-l6-23.png)
+
+1. In the **Storage Migration Service** pane, scroll down to the bottom of the page and select **+ New job (1)**. Under the **New job** pane provide below details and click on **OK (4)**.
+
+   | Job Name | **SVR1toSVR2 (2)** |
+
+   | Source devices | **Windows servers and clusters (3)** |
+
+    ![](../media/az-l6-24.png)
+
+1. In the **Storage Migration Service > SVR1toSVR2** pane, on the **Inventory servers** tab, review the **Check the prerequisites** pane and select **Next**.
+
+    ![](../media/az-l6-25.png)
+
+1. On the **Inventory servers** tab, in the **Enter credentials** pane, if necessary, enter the credentials of the **CONTOSO\\Administrator (1)** user account and Password as **Pa55w.rd (2)**, uncheck the **Migrate from failover clusters (3)** checkbox, and then select **Next (4)**.
+
+    ![](../media/az-l6-26.png)
+
+1. On the **Inventory servers** tab, in the **Install required features** pane, select **Next**.
+
+    ![](../media/az-l6-27.png)
+
+1. On the **Inventory servers** tab, in the **Add and scan devices** pane, select **+ Add a device (1)**.
+
+1. On the **Add source device**, ensure that the **Device name (2)** option is selected, in the **Name** text box, enter **SEA-SVR1.contoso.com (3)**, and then select **Add (4)**.
+
+    ![](../media/az-l6-28.png)
+  
+1. On the list of devices, select the newly added **SEA-SVR1.contoso.com (1)** entry, in the **Add and scan devices** pane, in the toolbar, select the ellipsis (**... (2)**) symbol, and then, in the drop-down menu, select **Start scan (3)**.
+
+    ![](../media/az-l6-29.png)
+
+    >**Note:** If the ellipses (...) or any other options are not visible, please try zooming out the screen in the LabVM and check again.
+
+    >**Note:** Wait until the scan completes successfully. This should take about 1 minute.
+
+1. On the **Inventory servers** tab, in the **Add and scan devices** pane, select **Next**. 
+
+    ![](../media/az-l6-30.png)
+
+    >**Note:** This will transition to the second stage of the migration job accessible via the **Transfer data** tab in the **Storage Migration Service > SVR1toSVR2** pane.
+
+1. On the **Transfer data** tab, in the **Enter credentials for the destination device** pane, verify that the **CONTOSO\\Administrator (1)** user account and password as **Pa55w.rd (2)** is being used and select **Next (3)**.
+
+    ![](../media/az-l6-31.png)
+
+1. In the **Specify the destination for: sea-svr1.contoso.com** pane, ensure that the **Destination** option is set to **Use an existing server or VM (1)**, in the **Destination device** text box, enter **SEA-SVR2.contoso.com (2)** and select **Scan (3)**.
+
+    ![](../media/az-l6-32.png)
+
+    >**Note:** In case if you do not see the Scan button, please zoom out a little in the browser settings.
+   
+    >**Note:** Wait until the scan completes successfully. This should take about 1 minute.
+
+    >**Note:** In hybrid scenarios, you also have the option of automatically creating an Azure VM serving as the destination of the migration job.
+
+1. After the scan completes, in the **Specify the destination for: sea-svr1.contoso.com** pane, review the **Map each source volume to a destination volume** section and ensure that the **S:** source volume is mapped to the **S:** destination volume.
+
+    ![](../Media/lab6y31.png)
+
+1. In the **Specify the destination for: sea-svr1.contoso.com** pane, review the **Select the shares to transfer** section, ensure that the **Data** source share is included in the transfer, and then select **Next**.
+
+    ![](../Media/lab6y32.png)
+
+1. On the **Transfer data** tab, in the **Adjust transfer settings** pane, specify the following settings (leave others with their default values), and then select **Next (7)**:
+
+   | Setting | Value | 
+   | --- | --- |
+   | Back up folders that would be overwritten (Azure File Sync-enabled shares aren't backed up) | enabled **(1)** |
+   | Validation method | **CRC 64 (2)** |
+   | Max duration (minutes) | **60 (3)** |
+   | Migrate users and groups | **Reuse accounts with the same name (4)** |
+   | Max retries | **3 (5)** |
+   | Delay between retries (seconds) | **60 (6)** |
+
+    ![](../media/az-l6-34.png)
+
+1. On the **Transfer data** tab, in the **Install required features** pane, wait for the installation of **SMS-Proxy** on **SEA-SVR2.contoso.com** to complete **(1)**, and then select **Next (2)**.
+
+    ![](../media/az-l6-35.png)
+
+1. On the **Transfer data** tab, in the **Validate source and destination devices** pane, select **Validate (1)**, and after the validation **successfully completes (2)**, select **Next (3)**.
+
+    ![](../media/az-l6-36.png)
+
+1. On the **Transfer data** tab, in the **Start the transfer** pane, select **Start transfer**, wait until it completes, and then select **Next**.
+
+    ![](../media/az-l6-37.png)
+
+    ![](../media/az-l6-38.png)
+
+    >**Note:** Wait until the transfer completes successfully. This should take less than 1 minute.
+
+    >**Note:** This will transition to the third stage of the migration job accessible via the **Cut over to the new servers** tab on the **Storage Migration Service > SVR1toSVR2** pane.
+
+1. On the **Cut over to the new servers** tab, in the **Enter credentials for the source devices** and the **Enter credentials for the destination devices** sections, accept the stored credentials of the **CONTOSO\\Administrator** user account and select **Next**.
+
+    ![](../media/az-l6-39.png)
+
+1. On the **Cut over to the new servers** tab, in the **Configure cutover from sea-svr1.contoso.com to sea-svr2.contoso.com** pane, in the **Source network adapters** section, specify the following settings:
+
+   | Setting | Value | 
+   | --- | --- |
+   | Use DHCP | disabled **(1)** |
+   | IP address | **172.16.10.111 (2)**|
+   | Subnet | **255.255.0.0 (3)** |
+   | Gateway | **172.16.10.1 (4)** |
+
+1. On the **Cut over to the new servers** tab, in the **Configure cutover from sea-svr1.contoso.com to sea-svr2.contoso.com** pane, in the **Destination network adapters** drop-down list, select **Ethernet (5)**.
+
+1. On the **Cut over to the new servers** tab, in the **Configure cutover from sea-svr1.contoso.com to sea-svr2.contoso.com** pane, in the **Rename the source device after cutover** section, select the **Choose a new name (6)** option, in the **New source computer name** enter **SEA-SVR1-OLD (7)**, and then select **Next (8)**.
+
+    ![](../media/az-l6-40.png)
+
+1. On the **Cut over to the new servers** tab, in the **Adjust cutover settings** pane, in the **Cutover timeout (minutes)** text box, enter **30 (!)**, in the **Enter AD credentials** section, leave the **Stored credentials (2)** option enabled, and then select **Next (3)**.
+
+    ![](../media/az-l6-41.png)
+
+1. On the **Cut over to the new servers** tab, in the **Validate source and destination device** pane, select **Validate (1)**, and after the validation successfully completes **(2)**, select **Next (3)**.
+
+    ![](../media/az-l6-42.png)
+
+1. On the **Cut over to the new servers** tab, in the **Cut over to the new servers** pane, select **Start cutover**. The cutover will trigger two consecutive restarts of both **SEA-SVR1** and **SEA-SVR2**.
+ 
+    ![](../media/az-l6-43.png)
+
+
+### Task 3: Validate migration outcome
+
+In this task, you will validate the migration outcome by performing a series of checks on SEA-SVR2 to ensure that the network interfaces, NetBIOS names, shares, and data are correctly configured. This process will confirm that the file migration was successful and that the system is properly set up to handle the migrated data.
+
+1. On **SEA-SVR2**, sign in as **CONTOSO\\Administrator** with the password **Pa55w.rd**.
+
+1. On **SEA-SVR2**, select **Start (1)**.  
+1. Right-click **Windows PowerShell (2)**, select **More (3)**, and then choose **Run as administrator (4)**.  
+
+    ![](../media/az-l6-9.png)
+
+1. To identify the IPv4 addresses assigned to the network interface of **SEA-SVR2**, in the **Windows PowerShell** console, enter the following command, and then press Enter:
+	
+   ```powershell
+   Get-NetIPAddress | Where-Object AddressFamily -eq 'IPv4' | Select-Object IPAddress
+   ```
+
+    ![](../media/az-l6-44.png)
+
+    >**Note:** Verify that the output includes both **172.16.10.11** and **172.16.10.12**.
+
+1. To identify the NetBIOS name assigned to **SEA-SVR2**, in the **Windows PowerShell** console, enter the following command, and then press Enter:
+	
+   ```powershell
+   nbtstat -n
+   ```
+    
+    ![](../media/az-l6-45.png)
+
+    >**Note:** Verify that the output includes both **SEA-SVR1** and **SEA-SVR2**.
+
+1. To identify the local shares on **SEA-SVR2**, in the **Windows PowerShell** console, enter the following command, and then press Enter:
+	
+   ```powershell
+   Get-SMBShare
+   ```
+   
+    ![](../media/az-l6-46.png)
+
+    >**Note:** Verify that the output includes the **Data** share hosted in the **S:\Data** folder.
+
+1. To identify the content of the **Data** share on **SEA-SVR2**, in the **Windows PowerShell** console, enter the following command, and then press Enter:
+	
+   ```powershell
+   Get-ChildItem -Path 'S:\Data'
+   ```
+
+    ![](../media/az-l6-47.png)
+
+## Review
+
+In this lab, you have completed the following:
+- Deployed AD DS domain controllers in Azure.
+- Migrated file servers by using Storage Migration Service.
+
+## You have successfully completed the lab
