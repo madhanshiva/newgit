@@ -1,4 +1,14 @@
+
+
+
 # Lab 06: Upgrade and migrate to Windows Server
+
+
+
+> **Note:** This lab uses the same virtual machine (VM) provided for the track.  
+> Please make sure to stop or deallocate the VM after completing your lab activities for the day.  
+> For detailed guidance on VM usage and management, refer to the **[Getting Started](sample.md)** page.
+
 
 ## Lab scenario
 
